@@ -1,0 +1,9 @@
+out/
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfplan
+crash.log
+*.tfvars
+!*.tfvars.example
+.terraform.tfstate.lock.info

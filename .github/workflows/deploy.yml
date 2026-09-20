@@ -1,0 +1,175 @@
+name: Deploy
+
+# Manual only. Nothing in this repository spends money on a push.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: winbase-infra
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_VERSION: "1.16.3"
+
+jobs:
+  apply:
+    name: Build the server, apply the baseline, prove it
+    runs-on: ubuntu-latest
+    environment: lab
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Mask Azure identifiers
+        run: |
+          echo "::add-mask::$ARM_SUBSCRIPTION_ID"
+          echo "::add-mask::$ARM_TENANT_ID"
+          echo "::add-mask::$ARM_CLIENT_ID"
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Init
+        working-directory: infra
+        run: >-
+          terraform init -input=false
+          -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}"
+          -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}"
+          -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}"
+          -backend-config="key=infra.tfstate"
+
+      - name: Apply
+        working-directory: infra
+        run: >-
+          terraform apply -input=false -auto-approve -lock-timeout=5m
+          -var="resource_group_name=${{ vars.LAB_RESOURCE_GROUP }}"
+
+      - name: Collect outputs
+        id: tf
+        working-directory: infra
+        run: |
+          {
+            echo "vm_name=$(terraform output -raw vm_name)"
+            echo "resource_group=$(terraform output -raw resource_group_name)"
+            echo "image_sku=$(terraform output -raw image_sku)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build the bundles
+        shell: pwsh
+        run: |
+          ./scripts/Build-Bundle.ps1 -Mode Audit
+          ./scripts/Build-Bundle.ps1 -Mode WhatIf
+          ./scripts/Build-Bundle.ps1 -Mode Remediate
+
+      # Audit, remediate, audit again, then remediate again. The last step is
+      # the one that proves the module is idempotent on a real machine.
+      - name: Run the baseline on the server
+        id: baseline
+        env:
+          VM: ${{ steps.tf.outputs.vm_name }}
+          RG: ${{ steps.tf.outputs.resource_group }}
+        run: |
+          set -o pipefail
+
+          run_bundle() {
+            local mode="$1" out="$2"
+            # No inbound path to this machine: the script goes through the
+            # Azure agent, not the network.
+            az vm run-command invoke \
+              --resource-group "$RG" --name "$VM" \
+              --command-id RunPowerShellScript \
+              --scripts "@out/baseline-${mode}.ps1" \
+              --query "value[0].message" -o tsv > "raw-${mode}.txt"
+            sed -n 's/.*---BASELINE-JSON-START---//p; /---BASELINE-JSON-START---/,/---BASELINE-JSON-END---/p' "raw-${mode}.txt" \
+              | tr -d '\r' \
+              | sed -e 's/---BASELINE-JSON-START---//' -e 's/---BASELINE-JSON-END---//' \
+              | grep -o '{.*}' | head -1 > "$out"
+            jq -e . "$out" >/dev/null || { echo "::error::No usable JSON from the $mode run"; cat "raw-${mode}.txt"; exit 1; }
+          }
+
+          echo "::group::Before: audit a freshly built server"
+          run_bundle audit before.json
+          jq '.report | {Total, Compliant, NonCompliant, CompliantRate, HighSeverity}' before.json
+          echo "::endgroup::"
+
+          echo "::group::What the remediation would change"
+          run_bundle whatif whatif.json
+          jq -r '.changes[] | "\(.Action)  \(.Id)  (\(.Reason))"' whatif.json
+          echo "::endgroup::"
+
+          echo "::group::Remediate"
+          run_bundle remediate remediate.json
+          jq -r '.changes[] | "\(.Action)  \(.Id)"' remediate.json
+          echo "::endgroup::"
+
+          echo "::group::After: audit again"
+          run_bundle audit after.json
+          jq '.report | {Total, Compliant, NonCompliant, CompliantRate}' after.json
+          echo "::endgroup::"
+
+          echo "::group::Run remediation again: it should change nothing"
+          run_bundle remediate again.json
+          jq -r '.changes[] | "\(.Action)  \(.Id)"' again.json
+          echo "::endgroup::"
+
+          before_bad=$(jq -r '.report.NonCompliant' before.json)
+          after_bad=$(jq -r '.report.NonCompliant' after.json)
+          after_rate=$(jq -r '.report.CompliantRate' after.json)
+          remediated=$(jq -r '[.changes[] | select(.Action == "Remediated")] | length' remediate.json)
+          repeat=$(jq -r '[.changes[] | select(.Action == "Remediated")] | length' again.json)
+          whatif_wrote=$(jq -r '[.changes[] | select(.Action == "Remediated")] | length' whatif.json)
+
+          test "$before_bad" -gt 0            # a fresh server is not compliant
+          test "$whatif_wrote" -eq 0          # -WhatIf changed nothing
+          test "$remediated" -gt 0            # remediation did something
+          test "$after_bad" -eq 0             # and the server now passes
+          test "$repeat" -eq 0                # a second run is a no-op
+
+          {
+            echo "### Baseline applied to ${{ steps.tf.outputs.image_sku }}"
+            echo ""
+            echo "| Stage | Compliant | Non-compliant |"
+            echo "|---|---|---|"
+            echo "| Fresh server | $(jq -r '.report.Compliant' before.json) | $before_bad |"
+            echo "| After remediation | $(jq -r '.report.Compliant' after.json) | $after_bad ($after_rate%) |"
+            echo ""
+            echo "Controls remediated: **$remediated**. Second run changed **$repeat** (idempotent). \`-WhatIf\` wrote **$whatif_wrote**."
+            echo ""
+            echo "Drift found on the fresh server:"
+            echo ""
+            echo '```'
+            jq -r '.report.Failing[] | "\(.Severity)\t\(.Id)\texpected \(.Expected), found \(.Actual // "unset")"' before.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: baseline-reports
+          path: |
+            before.json
+            whatif.json
+            remediate.json
+            after.json
+            again.json
+          if-no-files-found: warn
