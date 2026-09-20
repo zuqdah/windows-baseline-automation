@@ -12,8 +12,11 @@ variable "location" {
 
 variable "vm_size" {
   description = "VM size. A B-series burstable is ample for a baseline run."
-  type        = string
-  default     = "Standard_B2s"
+  # Bsv2, not the original B-series: Standard_B2s is not offered in
+  # eastus2, which Azure reports as a capacity restriction rather than
+  # an unavailable SKU. 2 vCPU and 4 GB, and it supports trusted launch.
+  type    = string
+  default = "Standard_B2ls_v2"
 }
 
 variable "vm_image_sku" {

@@ -86,7 +86,7 @@ infra/                Network with no inbound path, the server, and Key Vault
 
 | Resource | Rate | Lab cost |
 |---|---|---|
-| Standard_B2s, Windows | $0.0496 per hour | About 2 cents for a deploy-and-verify cycle |
+| Standard_B2ls_v2, Windows | $0.0508 per hour | About 2 cents for a deploy-and-verify cycle |
 | 32 GB StandardSSD OS disk | Per GB-month | Pennies while it exists |
 | Key Vault, network | Within the free grant | ~$0 |
 
