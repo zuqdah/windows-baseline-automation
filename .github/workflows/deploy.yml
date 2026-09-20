@@ -80,6 +80,27 @@ jobs:
           ./scripts/Build-Bundle.ps1 -Mode WhatIf
           ./scripts/Build-Bundle.ps1 -Mode Remediate
 
+      # The machine finished provisioning seconds ago. Run Command is delivered
+      # by the guest agent, which reports ready well after the VM itself does,
+      # so invoking immediately fails with no useful message.
+      - name: Wait for the guest agent
+        env:
+          VM: ${{ steps.tf.outputs.vm_name }}
+          RG: ${{ steps.tf.outputs.resource_group }}
+        run: |
+          for i in $(seq 1 40); do
+            status=$(az vm get-instance-view -g "$RG" -n "$VM" \
+              --query "instanceView.vmAgent.statuses[0].code" -o tsv 2>/dev/null || true)
+            echo "attempt $i: ${status:-unknown}"
+            if [ "$status" = "ProvisioningState/succeeded" ]; then
+              echo "Guest agent ready after $(( i * 15 ))s or less."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Guest agent never reported ready"
+          exit 1
+
       # Audit, remediate, audit again, then remediate again. The last step is
       # the one that proves the module is idempotent on a real machine.
       - name: Run the baseline on the server
@@ -94,16 +115,25 @@ jobs:
             local mode="$1" out="$2"
             # No inbound path to this machine: the script goes through the
             # Azure agent, not the network.
-            az vm run-command invoke \
+            if ! az vm run-command invoke \
               --resource-group "$RG" --name "$VM" \
               --command-id RunPowerShellScript \
               --scripts "@out/baseline-${mode}.ps1" \
-              --query "value[0].message" -o tsv > "raw-${mode}.txt"
-            sed -n 's/.*---BASELINE-JSON-START---//p; /---BASELINE-JSON-START---/,/---BASELINE-JSON-END---/p' "raw-${mode}.txt" \
-              | tr -d '\r' \
-              | sed -e 's/---BASELINE-JSON-START---//' -e 's/---BASELINE-JSON-END---//' \
-              | grep -o '{.*}' | head -1 > "$out"
-            jq -e . "$out" >/dev/null || { echo "::error::No usable JSON from the $mode run"; cat "raw-${mode}.txt"; exit 1; }
+              --query "value[0].message" -o tsv > "raw-${mode}.txt" 2> "err-${mode}.txt"; then
+              echo "::error::az vm run-command failed for the $mode run"
+              cat "err-${mode}.txt"
+              return 1
+            fi
+            # Without the guard, a pipeline that matches nothing trips pipefail
+            # and set -e kills the job before the diagnostics below can run,
+            # which is how this failed silently once already.
+            tr -d '\r' < "raw-${mode}.txt" | grep -o '{.*}' | head -1 > "$out" || true
+            if ! jq -e . "$out" >/dev/null 2>&1; then
+              echo "::error::No usable JSON from the $mode run"
+              echo "--- stderr ---"; cat "err-${mode}.txt"
+              echo "--- stdout ---"; cat "raw-${mode}.txt"
+              return 1
+            fi
           }
 
           echo "::group::Before: audit a freshly built server"
