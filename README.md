@@ -86,9 +86,11 @@ infra/                Network with no inbound path, the server, and Key Vault
 
 | Resource | Rate | Lab cost |
 |---|---|---|
-| Standard_B2ls_v2, Windows | $0.0508 per hour | About 2 cents for a deploy-and-verify cycle |
+| Standard_D2als_v7, Windows | $0.172 per hour | Under a dime for a deploy-and-verify cycle |
 | 32 GB StandardSSD OS disk | Per GB-month | Pennies while it exists |
 | Key Vault, network | Within the free grant | ~$0 |
+
+Size is constrained by what the subscription can actually run: the original B-series is not offered in eastus2 and Bsv2 quota there is zero, so the cheapest *available* two-core size costs about three times a B-series. Raising the Bsv2 quota would bring it back down.
 
 Deploys are manual and the nightly teardown removes everything at 07:00 UTC, so the machine never runs for more than a day.
 

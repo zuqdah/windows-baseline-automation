@@ -11,12 +11,13 @@ variable "location" {
 }
 
 variable "vm_size" {
-  description = "VM size. A B-series burstable is ample for a baseline run."
-  # Bsv2, not the original B-series: Standard_B2s is not offered in
-  # eastus2, which Azure reports as a capacity restriction rather than
-  # an unavailable SKU. 2 vCPU and 4 GB, and it supports trusted launch.
+  description = "VM size. Two cores is ample for a baseline run."
+  # Not a B-series. The original B-series is not offered in eastus2, and
+  # this subscription has zero cores of Bsv2 quota there, so both fail at
+  # create time rather than at plan time. This is the cheapest size that
+  # is offered, has quota, and supports trusted launch.
   type    = string
-  default = "Standard_B2ls_v2"
+  default = "Standard_D2als_v7"
 }
 
 variable "vm_image_sku" {
