@@ -124,6 +124,7 @@ Deploys are manual and the nightly teardown removes everything at 07:00 UTC, so 
 - **A bundle instead of a module feed.** Azure Run Command takes one script, so the build concatenates the module, the entry point, and the call. The server needs no package source, no network access, and no credentials, and runs exactly the code in the commit. The builder parses the result and refuses to ship a bundle that would fail on the machine.
 - **The mode is baked into the bundle.** Passing parameters through Run Command varies by platform; generating one script per mode removes the question.
 - **No inbound path.** Configuration arrives through the Azure agent. The NSG denies inbound explicitly even though Azure already does, so the intent survives a later edit.
+- **Measurements travel, documentation does not.** Run Command caps its message at about 4 KB and truncates from the *front*, so an oversized report loses its opening brace and stops being JSON rather than arriving visibly short. The report on the wire carries counts, severities, expected and actual values; each control's name, description, and CIS reference stay in the module. The entry point refuses to emit a report over 3500 bytes instead of letting the agent hand back something unparseable.
 - **`-WhatIf` is not decoration.** It is tested, and the pipeline asserts that a `-WhatIf` run changes nothing before it allows a real one.
 
 ## Part of a series
