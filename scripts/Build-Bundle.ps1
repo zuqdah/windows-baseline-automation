@@ -29,11 +29,11 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 
 if (-not $OutputPath) {
-    $OutputPath = Join-Path $root 'out' ("baseline-{0}.ps1" -f $Mode.ToLower())
+    $OutputPath = Join-Path -Path $root -ChildPath 'out' -AdditionalChildPath ("baseline-{0}.ps1" -f $Mode.ToLower())
 }
 
-$module = Get-Content (Join-Path $root 'module' 'WindowsBaseline' 'WindowsBaseline.psm1') -Raw
-$entry = Get-Content (Join-Path $root 'scripts' 'Invoke-Baseline.ps1') -Raw
+$module = Get-Content (Join-Path -Path $root -ChildPath 'module' -AdditionalChildPath 'WindowsBaseline', 'WindowsBaseline.psm1') -Raw
+$entry = Get-Content (Join-Path -Path $root -ChildPath 'scripts' -AdditionalChildPath 'Invoke-Baseline.ps1') -Raw
 
 # Export-ModuleMember is only valid inside a module; in a plain script it throws.
 $module = $module -replace '(?m)^Export-ModuleMember.*$', '# (Export-ModuleMember removed: this bundle is a script, not a module)'

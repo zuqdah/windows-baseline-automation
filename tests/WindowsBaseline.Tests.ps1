@@ -4,7 +4,7 @@
 #>
 
 BeforeAll {
-    $module = Join-Path $PSScriptRoot '..' 'module' 'WindowsBaseline' 'WindowsBaseline.psm1'
+    $module = Join-Path -Path $PSScriptRoot -ChildPath '..' -AdditionalChildPath 'module', 'WindowsBaseline', 'WindowsBaseline.psm1'
     Import-Module $module -Force
     $script:ModuleName = 'WindowsBaseline'
 }

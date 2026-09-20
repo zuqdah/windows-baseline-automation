@@ -271,6 +271,10 @@ function New-BaselineReport {
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
+    # The verb is right: this creates a report object. It writes nothing to
+    # the system, so there is no state change for -WhatIf to protect.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Builds an in-memory summary; changes no state.')]
     param(
         [Parameter(Mandatory, ValueFromPipeline)]
         [pscustomobject[]]$Result
