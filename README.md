@@ -32,7 +32,7 @@ flowchart LR
 |---|---|
 | **Refactoring legacy automation** | The same six controls, moved from imperative commands to declarative data. Auditing and remediation read the same definitions, so they cannot disagree. |
 | **Tested PowerShell** | 17 Pester tests covering drift detection, idempotence, `-WhatIf`, missing values, and the JSON report. Every registry access goes through one mockable seam, so the suite runs on any machine. |
-| **Engineering standards** | PSScriptAnalyzer must be clean on the module; the legacy script's finding count is reported alongside it so the improvement is measured rather than claimed. |
+| **Engineering standards** | PSScriptAnalyzer runs over the legacy script and the refactor with the same ruleset, so the comparison means something: 8 findings against 0. A clean run gates the build rather than decorating it. |
 | **Windows Server, modernized** | Server 2025 Core, Azure Edition: trusted launch with secure boot and vTPM, hotpatching for most updates without a reboot, and no GUI. |
 | **Configuration without access** | The pipeline reaches the machine through the Azure agent. No RDP, no public IP, no bastion, no SSH keys. The local administrator password exists because Azure requires one, and lives in Key Vault for break-glass. |
 | **Evidence, not assertion** | The deploy audits a fresh server, shows what would change, remediates, audits again, and then remediates a second time to prove the module is idempotent on a real machine. Reports are kept as build artifacts. |

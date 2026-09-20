@@ -21,17 +21,15 @@ terraform {
 }
 
 provider "azurerm" {
+  # Registering a namespace is a subscription-scope action, and the deploy
+  # identity is deliberately only Contributor on the resource group. So it
+  # happens here, where Terraform runs as an Owner, and infra registers
+  # nothing. These four are what this lab actually uses.
   resource_providers_to_register = [
-    "Microsoft.AlertsManagement",
-    "Microsoft.App",
-    "Microsoft.CognitiveServices",
+    "Microsoft.Compute",
     "Microsoft.KeyVault",
-    "Microsoft.ManagedIdentity",
-    "Microsoft.OperationalInsights",
+    "Microsoft.Network",
     "Microsoft.Storage",
-    # Azure returns this namespace in lowercase and the provider matches
-    # case-sensitively; capitalized, it is silently skipped.
-    "microsoft.insights",
   ]
 
   storage_use_azuread = true
