@@ -128,6 +128,9 @@ jobs:
             # and set -e kills the job before the diagnostics below can run,
             # which is how this failed silently once already.
             tr -d '\r' < "raw-${mode}.txt" | grep -o '{.*}' | head -1 > "$out" || true
+            if ! grep -q -- '---BASELINE-JSON-START---' "raw-${mode}.txt"; then
+              echo "::error::The $mode output lost its start marker: Run Command truncated it from the front"
+            fi
             if ! jq -e . "$out" >/dev/null 2>&1; then
               echo "::error::No usable JSON from the $mode run"
               echo "--- stderr ---"; cat "err-${mode}.txt"
